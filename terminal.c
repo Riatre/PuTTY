@@ -3168,6 +3168,9 @@ static void term_display_graphic_char(Terminal *term, unsigned long c)
             width++;
     }
 
+    /* Everybody forgets that a unicode control char can get to here ... */
+    if (width < 0) return;
+
     if (term->wrapnext && term->wrap && width > 0) {
         cline->lattr |= LATTR_WRAPPED;
         if (term->curs.y == term->marg_b)
