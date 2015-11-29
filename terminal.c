@@ -4264,6 +4264,15 @@ static void term_out(Terminal *term)
 			     term->curs.y + def(term->esc_args[0], 1), 1);
 			seen_disp_event(term);
 			break;
+		      case 'b':		/* REP: repeat */
+			compatibility(ANSI);
+			{
+			    int i;
+			    for(i=0; i<def(term->esc_args[0], 1); i++)
+				term_out_litchar(term, term->lastc);
+			}
+			seen_disp_event(term);
+			break;
 		      case ANSI('c', '>'):	/* DA: report xterm version */
 			compatibility(OTHER);
 			/* this reports xterm version 136 so that VIM can
