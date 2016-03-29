@@ -7234,7 +7234,7 @@ dw_textout(int x, int y, UINT opt, const RECT * rc,
   //
   wide = (wide && use_widefont && dwFF[FF_WIDE][FF_NORMAL]) ?
     FF_WIDE : FF_NORMAL;
-  int weight = (attr & ATTR_BOLD) ? FF_BOLD : FF_NORMAL;
+  int weight = (bold_font_mode == BOLD_FONT && (attr & ATTR_BOLD)) ? FF_BOLD : FF_NORMAL;
   int alt = (dwFF[FF_ALT][FF_NORMAL]) ? FF_ALT : wide;
 
   static IDWriteTextAnalyzer *analyzer = NULL;
