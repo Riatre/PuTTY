@@ -11,6 +11,9 @@ FontSpec *platform_default_fontspec(const char *name)
     FontSpec *ret;
     FontSpec tmp;
     tmp.name = snewn(128, char);
+	tmp.isbold = 0;
+	if (!strcmp(name, "BoldFont"))
+		tmp.isbold = 1;
     if (!strcmp(name, "Font")) {
 	if (!get_l10n_setting("_DEFAULTFONTNAME_", tmp.name, 128))
             strcpy(tmp.name, "Courier New");
