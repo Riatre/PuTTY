@@ -3210,10 +3210,37 @@ static void term_out_litchar(Terminal *term, unsigned long c)
 
     if (DIRECT_CHAR(c))
 	width = 1;
-    if (!width)
-	width = (term->cjk_ambig_wide ?
-		 mk_wcwidth_cjk((unsigned int) c) :
-		 mk_wcwidth((unsigned int) c));
+
+	struct iso2022_data *iso2022 = NULL;
+	if (in_utf(term) && term->ucsdata->iso2022)
+		iso2022 = &term->ucsdata->iso2022_data;
+
+	if (iso2022)
+		width = iso2022_width(iso2022, (wchar_t)c);
+
+	if (!width || c >= 0x10000) {
+		width = (term->cjk_ambig_wide ?
+			mk_wcwidth_cjk((unsigned int)c) :
+			mk_wcwidth((unsigned int)c));
+		if ((c >= 0x20000 && c <= 0x2FFFD) ||   /* SIP */
+			(c >= 0x30000 && c <= 0x3FFFD) ||   /* TIP */
+			(c >= 0x1F200 && c <= 0x1F2DD) ||   /* ENCLOSED IDEOGRAPHIC SUPPL. */
+			(c >= 0x1B000 && c <= 0x1B0FF))     /* KANA SUPPL. */
+			width = 2;
+		else if ((c >= 0xE0100 && c <= 0xE01EF))  /* VARIATION SELECTOR */
+			width = 0;
+		else if ((c >= 0x10000 && c <= 0x1FFFD) || /* SMP */
+			(c >= 0xE0000 && c <= 0xEFFFD) || /* SSP */
+			(c >= 0xF0000 && c <= 0xFFFFD) || /* PRIVATE */
+			(c >= 0x100000 && c <= 0x10FFFD)) /* PRIVATE */
+			width = 1;
+
+		if (term->cjk_ambig_wide &&
+			((c >= 0x1F100 && c <= 0x1F19A) ||  /* ENCLOSED ALPHANUMERIC SUPPL. */
+				(c >= 0xF0000 && c <= 0xFFFFD) ||  /* PRIVATE */
+				(c >= 0x100000 && c <= 0x10FFFD))) /* PRIVATE */
+			width++;
+	}
 
     /* Everybody forgets that a unicode control char can get to here ... */
     if (width < 0) return;
@@ -3248,6 +3275,26 @@ static void term_out_litchar(Terminal *term, unsigned long c)
 	incpos(cursplus);
 	check_selection(term, term->curs, cursplus);
     }
+	if (term->logtype == LGTYP_ASCII && iso2022
+		&& term->utf_char == (int)c
+		&& 0x7f < c && c < 0x80000000
+		&& term->logctx) {
+		// output non ASCII characters by UTF-8 encoding
+		int i;
+		for (i = 5; i > 1 && (c & (0x1f << (i * 5 + 1))) == 0; i--)
+			;
+		{
+			int shifts = i * 6;
+			int mask = (1 << (5 - i + 1)) - 1;
+			int prebits = (0xff & ~((1 << (5 - i + 2)) - 1));
+			logtraffic(term->logctx, (unsigned char)(prebits | ((c >> shifts) & mask)), LGTYP_ASCII);
+			do {
+				shifts -= 6;
+				logtraffic(term->logctx, (unsigned char)(0x80 | ((c >> shifts) & 0x3f)), LGTYP_ASCII);
+			} while (shifts > 0);
+		}
+	}
+	else
     if (((c & CSET_MASK) == CSET_ASCII ||
 	 (c & CSET_MASK) == 0) &&
 	term->logctx)
@@ -3823,183 +3870,7 @@ static void term_out(Terminal *term)
 	      case TOPLEVEL:
 		/* Only graphic characters get this far;
 		 * ctrls are stripped above */
-		{
-		    termline *cline = scrlineptr(term->curs.y);
-		    int width = 0;
-		    if (DIRECT_CHAR(c))
-			width = 1;
-		    if (iso2022)
-			width = iso2022_width (iso2022, (wchar_t)c);
-		    if (!width || c >= 0x10000) {
-			width = (term->cjk_ambig_wide ?
-				 mk_wcwidth_cjk((unsigned int) c) :
-				 mk_wcwidth((unsigned int) c));
-			/* yoshidam: wchar_t loses Unicode value */
-			if ((c >= 0x20000 && c <= 0x2FFFD) ||   /* SIP */
-			    (c >= 0x30000 && c <= 0x3FFFD) ||   /* TIP */
-			    (c >= 0x1F200 && c <= 0x1F2DD) ||   /* ENCLOSED IDEOGRAPHIC SUPPL. */
-			    (c >= 0x1B000 && c <= 0x1B0FF))     /* KANA SUPPL. */
-			    width = 2;
-			else if ((c >= 0xE0100 && c <= 0xE01EF))  /* VARIATION SELECTOR */
-			    width = 0;
-			else if ((c >= 0x10000 && c <= 0x1FFFD) || /* SMP */
-				 (c >= 0xE0000 && c <= 0xEFFFD) || /* SSP */
-				 (c >= 0xF0000 && c <= 0xFFFFD) || /* PRIVATE */
-				 (c >= 0x100000 && c <= 0x10FFFD)) /* PRIVATE */
-			    width = 1;
-
-			if (term->cjk_ambig_wide &&
-			    ((c >= 0x1F100 && c <= 0x1F19A) ||  /* ENCLOSED ALPHANUMERIC SUPPL. */
-			     (c >= 0xF0000 && c <= 0xFFFFD) ||  /* PRIVATE */
-			     (c >= 0x100000 && c <= 0x10FFFD))) /* PRIVATE */
-			    width++;
-		    }
-
-		    if (term->wrapnext && term->wrap && width > 0) {
-			cline->lattr |= LATTR_WRAPPED;
-			if (term->curs.y == term->marg_b)
-			    scroll(term, term->marg_t, term->marg_b, 1, TRUE);
-			else if (term->curs.y < term->rows - 1)
-			    term->curs.y++;
-			term->curs.x = 0;
-			term->wrapnext = FALSE;
-			cline = scrlineptr(term->curs.y);
-		    }
-		    if (term->insert && width > 0)
-			insch(term, width);
-		    if (term->selstate != NO_SELECTION) {
-			pos cursplus = term->curs;
-			incpos(cursplus);
-			check_selection(term, term->curs, cursplus);
-		    }
-		    if (term->logtype == LGTYP_ASCII && iso2022
-			    && term->utf_char == (int) c
-			    && 0x7f < c && c < 0x80000000
-			    && term->logctx) {
-			// output non ASCII characters by UTF-8 encoding
-			int i;
-			for (i = 5; i > 1 && (c & (0x1f << (i * 5 + 1))) == 0; i--)
-			    ;
-			{
-			    int shifts = i * 6;
-			    int mask = (1 << (5 - i + 1)) - 1;
-			    int prebits = (0xff & ~((1 << (5 - i + 2)) - 1));
-			    logtraffic(term->logctx, (unsigned char) (prebits | ((c >> shifts) & mask)), LGTYP_ASCII);
-			    do {
-				shifts -= 6;
-				logtraffic(term->logctx, (unsigned char) (0x80 | ((c >> shifts) & 0x3f)), LGTYP_ASCII);
-			    } while (shifts > 0);
-			}
-		    } else
-		    if (((c & CSET_MASK) == CSET_ASCII ||
-			 (c & CSET_MASK) == 0) &&
-			term->logctx)
-			logtraffic(term->logctx, (unsigned char) c,
-				   LGTYP_ASCII);
-
-		    switch (width) {
-		      case 2:
-			/*
-			 * If we're about to display a double-width
-			 * character starting in the rightmost
-			 * column, then we do something special
-			 * instead. We must print a space in the
-			 * last column of the screen, then wrap;
-			 * and we also set LATTR_WRAPPED2 which
-			 * instructs subsequent cut-and-pasting not
-			 * only to splice this line to the one
-			 * after it, but to ignore the space in the
-			 * last character position as well.
-			 * (Because what was actually output to the
-			 * terminal was presumably just a sequence
-			 * of CJK characters, and we don't want a
-			 * space to be pasted in the middle of
-			 * those just because they had the
-			 * misfortune to start in the wrong parity
-			 * column. xterm concurs.)
-			 */
-			check_boundary(term, term->curs.x, term->curs.y);
-			check_boundary(term, term->curs.x+2, term->curs.y);
-			if (term->curs.x == term->cols-1) {
-			    copy_termchar(cline, term->curs.x,
-					  &term->erase_char);
-			    cline->lattr |= LATTR_WRAPPED | LATTR_WRAPPED2;
-			    if (term->curs.y == term->marg_b)
-				scroll(term, term->marg_t, term->marg_b,
-				       1, TRUE);
-			    else if (term->curs.y < term->rows - 1)
-				term->curs.y++;
-			    term->curs.x = 0;
-			    cline = scrlineptr(term->curs.y);
-			    /* Now we must check_boundary again, of course. */
-			    check_boundary(term, term->curs.x, term->curs.y);
-			    check_boundary(term, term->curs.x+2, term->curs.y);
-			}
-
-			/* FULL-TERMCHAR */
-			clear_cc(cline, term->curs.x);
-			cline->chars[term->curs.x].chr = c;
-			cline->chars[term->curs.x].attr = term->curr_attr;
-
-			term->curs.x++;
-
-			/* FULL-TERMCHAR */
-			clear_cc(cline, term->curs.x);
-			cline->chars[term->curs.x].chr = UCSWIDE;
-			cline->chars[term->curs.x].attr = term->curr_attr;
-
-			break;
-		      case 1:
-			check_boundary(term, term->curs.x, term->curs.y);
-			check_boundary(term, term->curs.x+1, term->curs.y);
-
-			/* FULL-TERMCHAR */
-			clear_cc(cline, term->curs.x);
-			cline->chars[term->curs.x].chr = c;
-			cline->chars[term->curs.x].attr = term->curr_attr;
-
-			break;
-		      case 0:
-			if (term->curs.x > 0) {
-			    int x = term->curs.x - 1;
-
-			    /* If we're in wrapnext state, the character
-			     * to combine with is _here_, not to our left. */
-			    if (term->wrapnext)
-				x++;
-
-			    /*
-			     * If the previous character is
-			     * UCSWIDE, back up another one.
-			     */
-			    if (cline->chars[x].chr == UCSWIDE) {
-				assert(x > 0);
-				x--;
-			    }
-
-			    add_cc(cline, x, c);
-			    seen_disp_event(term);
-			}
-			continue;
-		      default:
-			continue;
-		    }
-		    term->curs.x++;
-		    if (term->curs.x == term->cols) {
-			term->curs.x--;
-			term->wrapnext = TRUE;
-			if (term->wrap && term->vt52_mode) {
-			    cline->lattr |= LATTR_WRAPPED;
-			    if (term->curs.y == term->marg_b)
-				scroll(term, term->marg_t, term->marg_b, 1, TRUE);
-			    else if (term->curs.y < term->rows - 1)
-				term->curs.y++;
-			    term->curs.x = 0;
-			    term->wrapnext = FALSE;
-			}
-		    }
-		    seen_disp_event(term);
-		}
+		term_out_litchar(term, c);
 		break;
 
 	      case OSC_MAYBE_ST:
