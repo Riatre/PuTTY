@@ -5273,6 +5273,7 @@ static void term_out(Terminal *term)
 		term->curr_attr &= ~ATTR_FGMASK;
 		term->curr_attr &= ~ATTR_BOLD;
 		term->curr_attr |= (c & 0xF) << ATTR_FGSHIFT;
+		term->curr_truecolour.fg.enabled = FALSE;
 		set_erase_char(term);
 		break;
 	      case VT52_BG:
@@ -5280,6 +5281,7 @@ static void term_out(Terminal *term)
 		term->curr_attr &= ~ATTR_BGMASK;
 		term->curr_attr &= ~ATTR_BLINK;
 		term->curr_attr |= (c & 0xF) << ATTR_BGSHIFT;
+		term->curr_truecolour.bg.enabled = FALSE;
 		set_erase_char(term);
 		break;
 #endif
