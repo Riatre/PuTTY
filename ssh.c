@@ -10797,6 +10797,7 @@ static const char *ssh_init(void *frontend_handle, void **backend_handle,
     ssh->general_packet_processing = NULL;
 
     ssh->pinger = NULL;
+    ssh->fullhostname = NULL;
 
     ssh->incoming_data_size = ssh->outgoing_data_size = 0L;
     ssh->max_data_size = parse_blocksize(conf_get_str(ssh->conf,

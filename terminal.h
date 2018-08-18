@@ -39,7 +39,7 @@ struct termchar {
      * saying FULL-TERMCHAR.
      */
     unsigned long chr;
-    unsigned long attr;
+    unsigned long long attr;
     truecolour truecolour;
 
     /*
@@ -160,6 +160,7 @@ struct terminal_tag {
     int mouse_is_down;		       /* used while tracking mouse buttons */
 
     int bracketed_paste;
+    int osc_clipping;
 
     int cset_attr[2];
 
@@ -181,7 +182,7 @@ struct terminal_tag {
 #define ANSI(x,y)	((x)+((y)<<8))
 #define ANSI_QUE(x)	ANSI(x,TRUE)
 
-#define OSC_STR_MAX 2048
+#define OSC_STR_MAX 16384
     int osc_strlen;
     char osc_string[OSC_STR_MAX + 1];
     int osc_w;
@@ -338,6 +339,16 @@ struct terminal_tag {
     int mouse_select_clipboards[N_CLIPBOARDS];
     int n_mouse_select_clipboards;
     int mouse_paste_clipboard;
+
+    /* Hyperlink */
+    int url_enable;
+    int url_ctrl_click;
+    /* Ignore Chars */
+    unsigned long ignore_uchars[IGNORE_CHARS_MAX + 1];
+    int ignore_length;
+
+    //d2d
+    int update_delay;
 };
 
 #define in_utf(term) ((term)->utf || (term)->ucsdata->line_codepage==CP_UTF8)

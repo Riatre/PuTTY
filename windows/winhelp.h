@@ -122,6 +122,7 @@
 #define WINHELP_CTX_selection_shiftdrag "selection.shiftdrag:config-mouseshift"
 #define WINHELP_CTX_selection_rect "selection.rect:config-rectselect"
 #define WINHELP_CTX_selection_linedraw "selection.linedraw:config-linedrawpaste"
+#define WINHELP_CTX_ignore_chars "selection.ignore:config-ignorechars"
 #define WINHELP_CTX_selection_autocopy "selection.autocopy:config-selection-autocopy"
 #define WINHELP_CTX_selection_clipactions "selection.clipactions:config-selection-clipactions"
 #define WINHELP_CTX_selection_pastectrl "selection.pastectrl:config-paste-ctrl-char"
