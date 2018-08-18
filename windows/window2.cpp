@@ -1097,9 +1097,6 @@ void cleanup_exit(int code)
 
   if (conf_get_int(conf, CONF_protocol) == PROT_SSH) {
     random_save_seed();
-#ifdef MSCRYPTOAPI
-    crypto_wrapup();
-#endif
   }
   shutdown_help();
 
@@ -3572,7 +3569,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
            */
           term_seen_key_event(term);
           if (ldisc)
-            ldisc_send(ldisc, (char *)buf, len, 1);
+            ldisc_send(ldisc, buf, len, 1);
           show_mouseptr(0);
         }
       }
