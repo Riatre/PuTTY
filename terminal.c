@@ -3129,7 +3129,14 @@ static void term_print_finish(Terminal *term)
 static void term_display_graphic_char(Terminal *term, unsigned long c)
 {
     termline *cline = scrlineptr(term->curs.y);
+	struct iso2022_data *iso2022 = NULL;
     int width = 0;
+
+    /* An ASCII control char can't get to here ... */
+    if (c < ' ') return;
+    if (in_utf (term) && term->ucsdata->iso2022)
+	iso2022 = &term->ucsdata->iso2022_data;
+
     if (DIRECT_CHAR(c))
         width = 1;
     if (iso2022)
