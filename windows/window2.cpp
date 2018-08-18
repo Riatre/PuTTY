@@ -535,22 +535,15 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
    * config box. */
   defuse_showwindow();
 
-  if (!init_winver()) {
-    char *str = dupprintf("%s Fatal Error", appname);
-    MessageBox(NULL, "Windows refuses to report a version",
-               str, MB_OK | MB_ICONEXCLAMATION);
-    sfree(str);
-    return 1;
-  }
+  init_winver();
 
   /*
    * If we're running a version of Windows that doesn't support
    * WM_MOUSEWHEEL, find out what message number we should be
    * using instead.
    */
-  if (osVersion.dwMajorVersion < 4 ||
-      (osVersion.dwMajorVersion == 4 &&
-       osVersion.dwPlatformId != VER_PLATFORM_WIN32_NT))
+  if (osMajorVersion < 4 ||
+      (osMajorVersion == 4 && osPlatformId != VER_PLATFORM_WIN32_NT))
     wm_mousewheel = RegisterWindowMessage("MSWHEEL_ROLLMSG");
 
   init_help();
@@ -664,7 +657,10 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
       unsigned cpsize;
       if (sscanf(p + 1, "%p:%u", &filemap, &cpsize) == 2 &&
           (cp = MapViewOfFile(filemap, FILE_MAP_READ, 0, 0, cpsize)) != NULL) {
-        conf_deserialise(conf, cp, cpsize);
+        BinarySource src[1];
+        BinarySource_BARE_INIT(src, cp, cpsize);
+        if (!conf_deserialise(conf, src))
+          modalfatalbox("Serialised configuration data was invalid");
         UnmapViewOfFile(cp);
         CloseHandle(filemap);
       } else if (!do_config()) {
@@ -2607,10 +2603,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
            * config structure.
            */
           SECURITY_ATTRIBUTES sa;
+          strbuf *serbuf;
           void *p;
           int size;
 
-          size = conf_serialised_size(conf);
+          serbuf = strbuf_new();
+          conf_serialise(BinarySink_UPCAST(serbuf), conf);
+          size = serbuf->len;
 
           sa.nLength = sizeof(sa);
           sa.lpSecurityDescriptor = NULL;
@@ -2620,10 +2619,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
           if (filemap && filemap != INVALID_HANDLE_VALUE) {
             p = MapViewOfFile(filemap, FILE_MAP_WRITE, 0, 0, size);
             if (p) {
-              conf_serialise(conf, p);
+              memcpy(p, serbuf->s, size);
               UnmapViewOfFile(p);
             }
           }
+
+          strbuf_free(serbuf);
           inherit_handles = TRUE;
           cl = dupprintf("putty %s&%p:%u", argprefix,
                          filemap, (unsigned)size);
@@ -3610,8 +3611,8 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
       int n;
       char *buff;
 
-      if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS ||
-          osVersion.dwPlatformId == VER_PLATFORM_WIN32s)
+      if (osPlatformId == VER_PLATFORM_WIN32_WINDOWS ||
+          osPlatformId == VER_PLATFORM_WIN32s)
         break;  /* no Unicode */
 
       if ((lParam & GCS_RESULTSTR) == 0)        /* Composition unfinished. */
@@ -3891,11 +3892,11 @@ static void sys_cursor_update(void)
   SetCaretPos(caret_x, caret_y);
 
   /* IMM calls on Win98 and beyond only */
-  if (osVersion.dwPlatformId == VER_PLATFORM_WIN32s)
+  if (osPlatformId == VER_PLATFORM_WIN32s)
     return;     /* 3.11 */
 
-  if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS &&
-      osVersion.dwMinorVersion == 0)
+  if (osPlatformId == VER_PLATFORM_WIN32_WINDOWS &&
+      osMinorVersion == 0)
     return;     /* 95 */
 
   /* we should have the IMM functions */
@@ -5376,7 +5377,7 @@ static int TranslateKey(UINT message, WPARAM wParam, LPARAM lParam,
     /* XXX how do we know what the max size of the keys array should
      * be is? There's indication on MS' website of an Inquire/InquireEx
      * functioning returning a KBINFO structure which tells us. */
-    if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_NT && p_ToUnicodeEx) {
+    if (osPlatformId == VER_PLATFORM_WIN32_NT && p_ToUnicodeEx) {
       r = p_ToUnicodeEx(wParam, scan, keystate, keys_unicode,
                         lenof(keys_unicode), 0, kbd_layout);
     } else {
@@ -6373,7 +6374,7 @@ void do_beep(void *frontend, int mode)
      * We must beep in different ways depending on whether this
      * is a 95-series or NT-series OS.
      */
-    if (osVersion.dwPlatformId == VER_PLATFORM_WIN32_NT)
+    if (osPlatformId == VER_PLATFORM_WIN32_NT)
       Beep(800, 100);
     else
       MessageBeep(-1);
@@ -6622,12 +6623,12 @@ void frontend_keypress(void *handle)
   return;
 }
 
-int from_backend(void *frontend, int is_stderr, const char *data, int len)
+int from_backend(void *frontend, int is_stderr, const void *data, int len)
 {
   return term_data(term, is_stderr, data, len);
 }
 
-int from_backend_untrusted(void *frontend, const char *data, int len)
+int from_backend_untrusted(void *frontend, const void *data, int len)
 {
   return term_data_untrusted(term, data, len);
 }
@@ -6637,12 +6638,12 @@ int from_backend_eof(void *frontend)
   return TRUE;  /* do respond to incoming EOF with outgoing */
 }
 
-int get_userpass_input(prompts_t * p, const unsigned char *in, int inlen)
+int get_userpass_input(prompts_t * p, bufchain *input)
 {
   int ret;
-  ret = cmdline_get_passwd_input(p, in, inlen);
+  ret = cmdline_get_passwd_input(p);
   if (ret == -1)
-    ret = term_get_userpass_input(term, p, in, inlen);
+    ret = term_get_userpass_input(term, p, input);
   return ret;
 }
 
@@ -7786,7 +7787,7 @@ static void bg_glass()
   }
 
   // Windows 10
-  if (osVersion.dwMajorVersion > 9) {
+  if (osMajorVersion > 9) {
     if (bg_effect == BG_PLANE) {
       return;
     }
