@@ -17,13 +17,12 @@
 #define ADB_MAX_BACKLOG 4096
 
 typedef struct adb_backend_data {
-    const struct plug_function_table *fn;
-    /* the above field _must_ be first in the structure */
-
     Socket s;
     int bufsize;
     void *frontend;
 	int state;
+
+    const Plug_vtable* plugvt;
 } *Adb;
 
 static int adb_kill;
@@ -39,7 +38,7 @@ static void c_write(Adb adb, char *buf, int len)
 static void adb_log(Plug plug, int type, SockAddr addr, int port,
 		    const char *error_msg, int error_code)
 {
-    Adb adb = (Adb) plug;
+    Adb adb = FROMFIELD(plug, struct adb_backend_data, plugvt);
     char addrbuf[256], *msg;
 
     sk_getaddr(addr, addrbuf, lenof(addrbuf));
@@ -55,7 +54,7 @@ static void adb_log(Plug plug, int type, SockAddr addr, int port,
 static int adb_closing(Plug plug, const char *error_msg, int error_code,
 		       int calling_back)
 {
-    Adb adb = (Adb) plug;
+    Adb adb = FROMFIELD(plug, struct adb_backend_data, plugvt);
 
     if (adb->s) {
         sk_close(adb->s);
@@ -96,7 +95,7 @@ static int adb_closing(Plug plug, const char *error_msg, int error_code,
 
 static int adb_receive(Plug plug, int urgent, char *data, int len)
 {
-    Adb adb = (Adb) plug;
+    Adb adb = FROMFIELD(plug, struct adb_backend_data, plugvt);
 	if (adb->state==1) {
 		if (data[0]=='O') { // OKAY
 			sk_write(adb->s,"0006shell:",10);
@@ -136,9 +135,16 @@ static int adb_receive(Plug plug, int urgent, char *data, int len)
 
 static void adb_sent(Plug plug, int bufsize)
 {
-    Adb adb = (Adb) plug;
+    Adb adb = FROMFIELD(plug, struct adb_backend_data, plugvt);
     adb->bufsize = bufsize;
 }
+
+static const Plug_vtable Adb_plugvt = {
+    adb_log,
+    adb_closing,
+    adb_receive,
+    adb_sent
+};
 
 /*
  * Called to set up the adb connection.
@@ -153,19 +159,13 @@ static const char *adb_init(void *frontend_handle, void **backend_handle,
 			    const char *host, int port, char **realhost, int nodelay,
 			    int keepalive)
 {
-    static const struct plug_function_table fn_table = {
-	adb_log,
-	adb_closing,
-	adb_receive,
-	adb_sent
-    };
     SockAddr addr;
     const char *err;
     Adb adb;
     char *buf;
 
     adb = snew(struct adb_backend_data);
-    adb->fn = &fn_table;
+    adb->plugvt = &Adb_plugvt;
     adb->s = NULL;
 	adb->state = 0;
     *backend_handle = adb;
@@ -206,7 +206,7 @@ static const char *adb_init(void *frontend_handle, void **backend_handle,
      * Open socket.
      */
     adb->s = new_connection(addr, *realhost, port, 0, 1, nodelay, keepalive,
-			    (Plug) adb, conf);
+			    &adb->plugvt, conf);
     if ((err = sk_socket_error(adb->s)) != NULL)
 	return err;
     if (*conf_get_str(conf, CONF_loghost)) {
