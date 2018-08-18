@@ -4540,6 +4540,7 @@ static void term_out(Terminal *term)
 					parse_optionalrgb(
                                             &term->curr_truecolour.bg,
                                             term->esc_args + (i+2));
+                                        term->curr_attr &= ~ATTR_BGMASK;
 					i += 4;
 				    }
 				    break;
