@@ -1354,12 +1354,17 @@ static void term_schedule_tblink(Terminal *term)
     }
 }
 
+int term_cursor_blinks(Terminal* term)
+{
+    return term->cursor_blink == -1 ? term->blink_cur : term->cursor_blink;
+}
+
 /*
  * Likewise with cursor blinks.
  */
 static void term_schedule_cblink(Terminal *term)
 {
-    if (term->blink_cur && term->has_focus) {
+    if (term_cursor_blinks(term) && term->has_focus) {
 	if (!term->cblink_pending)
 	    term->next_cblink = schedule_timer(CBLINK_DELAY, term_timer, term);
 	term->cblink_pending = TRUE;
@@ -1841,6 +1846,9 @@ Terminal *term_init(Conf *myconf, struct unicode_data *ucsdata,
     term->termstate = TOPLEVEL;
     term->selstate = NO_SELECTION;
     term->curstype = 0;
+    term->cursor_type = -1;
+    term->cursor_blink = -1;
+    term->cursor_invalid = FALSE;
 
     term_copy_stuff_from_conf(term);
 
@@ -4808,6 +4816,23 @@ static void term_out(Terminal *term)
 			    check_selection(term, old_curs, term->curs);
 			}
 			break;
+                      case ANSI('q', ' '):      /* DECSCUSR: set cursor style */
+                        compatibility(OTHER);
+                        {
+                            int ct = def(term->esc_args[0], -1);
+                            if (ct != -1) {
+                                if (ct == 0)
+                                    ct = 1;
+                                term->cursor_type = (ct - 1) / 2;
+                                term->cursor_blink = ct % 2;
+                            } else {
+                                term->cursor_type = -1;
+                                term->cursor_blink = -1;
+                            }
+                            term->cursor_invalid = TRUE;
+                            term_schedule_cblink(term);
+                        }
+                        break;
 		      case ANSI('c', '='):      /* Hide or Show Cursor */
 			compatibility(SCOANSI);
 			switch(term->esc_args[0]) {
@@ -5740,7 +5765,7 @@ static int lastrun = 0;
     /* Has the cursor position or type changed ? */
     if (term->cursor_on) {
 	if (term->has_focus) {
-	    if (term->cblinker || !term->blink_cur)
+	    if (term->cblinker || !term_cursor_blinks(term))
 		cursor = TATTR_ACTCURS;
 	    else
 		cursor = 0;
@@ -5786,7 +5811,8 @@ static int lastrun = 0;
     if (term->dispcursy >= 0 &&
 	(term->curstype != cursor ||
 	 term->dispcursy != our_curs_y ||
-	 term->dispcursx != our_curs_x)) {
+	 term->dispcursx != our_curs_x ||
+         term->cursor_invalid)) {
 	termchar *dispcurs = term->disptext[term->dispcursy]->chars +
 	    term->dispcursx;
 
@@ -6144,6 +6170,8 @@ static int lastrun = 0;
 
 	unlineptr(ldata);
     }
+
+    term->cursor_invalid = FALSE;
 
     lastrun = GETTICKCOUNT() - laststart + 1;
 

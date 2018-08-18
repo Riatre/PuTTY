@@ -334,6 +334,9 @@ struct terminal_tag {
     int scroll_on_key;
     int xterm_256_colour;
     int true_colour;
+    int cursor_type;
+    int cursor_blink;
+    int cursor_invalid;
 
     wchar_t *last_selected_text;
     int *last_selected_attr;

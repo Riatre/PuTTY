@@ -3975,7 +3975,8 @@ void do_text_internal(Context ctx, int x, int y, wchar_t * text, int len,
   x += offset_width;
   y += offset_height;
 
-  if ((attr & TATTR_ACTCURS) && (cursor_type == 0 || term->big_cursor)) {
+  int ctype = term->cursor_type == -1 ? cursor_type : term->cursor_type;
+  if ((attr & TATTR_ACTCURS) && (ctype == 0 || term->big_cursor)) {
     truecolour.fg = truecolour.bg = optionalrgb_none;
     attr &= ~(ATTR_REVERSE|ATTR_BLINK|ATTR_COLOURS|ATTR_DIM);
     /* cursor fg and bg */
@@ -4430,7 +4431,7 @@ void do_cursor(Context ctx, int x, int y, wchar_t * text, int len,
   int fnt_width;
   int char_width;
   HDC hdc = ctx;
-  int ctype = cursor_type;
+  int ctype = term->cursor_type == -1 ? cursor_type : term->cursor_type;
 
   lattr &= LATTR_MODE;
 
